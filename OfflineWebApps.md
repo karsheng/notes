@@ -296,3 +296,97 @@ self.addEventListener('fetch', function(event) {
 ```
 where the version number is generated from the content of the file. Then you can give these resources a cache time of a year or more - so that when you update your CSS a build script could automatically update your service worker changing the URL to this CSS. 
 1. Version number could also be all generated based on the things that caches. Versioning resources like this and giving them a long cache time isn't advice specific to service workers. It's just general good caching practice. 
+1. Reminder: when new worker is discovered it waits until all pages using current version go away before it can take over - and that could be a long time.
+1. Our goal is to tell user once an update has been found, and give them a button to ignore it or refresh the page to get the new version
+1. When you register a service worker it returns a promise, that promise fulfills with a service worker registration object - this object has properties and methods relating to the service worker registration.
+```JavaScript
+	navigator.serviceWorker.register('/sw.js').then(function(reg) {
+		reg.unregister();
+		reg.update();
+		// below points to service worker object or be null
+		reg.installing;
+		reg.waiting;
+		reg.active;
+		
+		// the registration object will emit an event when a new update is found
+		reg.addEventListener('updatefound', function() {
+			// reg.installing has changed (to new worker)
+		});
+
+		var sw = reg.installing;
+		console.log(sw.state);
+		// could log:
+		// 'installing'
+		// 'activating'
+		// 'activated'
+		// 'redundant' - thrown away because superseded by newer worker or fails to install
+
+		sw.addEventListener('statechange', function() {
+			// sw.state has changed 
+		});
+
+		if (!navigator.serviceWorker.controller {
+			// page didn't load using a service worker
+		}
+
+		if (reg.waiting) {
+			// there's an update ready and waiting!
+		}
+
+		if (reg.installing) {
+			// there's an update in progress
+			reg.installing.addEventListener('statechange', function() {
+				if (this.state == 'installed') {
+					// there's an update ready!
+				}
+			});
+		}
+		
+		// listen to if there's any update found
+		reg.addEventListener('updatefound', function() {
+			reg.installing.addEventListener('statechange', function() {
+				if (this.state == 'installed') {
+					// there's an update ready
+				}
+			})
+		})
+	})
+```
+1. Call `self.skipWaiting()` to not queue behind another service worker and just take over. Call this when the user hits the reset button.
+1. To send the signal from the page to the waiting service worker using `.postMessage()`
+```JavaScript
+	// from a page:
+	reg.installing.postMesssage({
+		foo: 'bar' 
+	});
+
+	// in the service worker:
+	self.addEventListener('message', function(event) {
+		event.data; // {foo: 'bar'}
+	});
+
+	navigator.serviceWorker.addEventListner('controllerchange', function() {
+		// navigator.serviceWorker.controller has changed
+		// you can use this to signal that we should reload the page
+	});
+```
+1. E.g. If the update lands before the user interacted with the page, tells service worker to take over and refreshes instantly - if the user hasn't interacted, refreshing instantly isn't disruptive in this case
+1. Ask server for change log between new version and the current version. If you update contains only minor things maybe don't bother user at all and let them get the update naturally or if update contains urgent security fix then you might consider reload the page automatically.
+1. A way to cache skeleton - check caching the skeleton video:
+self.addEventListener('fetch', function(event) {
+  // TODO: respond to requests for the root page with
+  // the page skeleton from the cache
+  var requestUrl = new URL(event.request.url);
+
+  if (requestUrl.origin === location.origin) {
+    if (requestUrl.pathname === '/') {
+      event.respondWith(caches.match('/skeleton'));
+      return; // no need to go to network for fallback as skeleton is part of the install set
+    }
+  }
+  event.respondWith(
+    caches.match(event.request).then(function(response) {
+      return response || fetch(event.request);
+    })
+  );
+});
