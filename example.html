@@ -1,9 +1,34 @@
-<html>
-	
-<ul id="nav">
-		<li></li>
-		<li></li>
-		<li></li>
-		<li></li>
-	</ul>	
+<!doctype html>
+	<head>
+		<title>Playground</title>
+	</head>
+	<body>
+		<p>playground</p>
+
+		<script>
+		function numLetters(letter) {
+			return new Function("num", 
+				"var output = '';" + 
+
+				"for (i = 0; i < Math.round(num); i++) {" + 
+					"output += '" + letter + "';" + 
+				"}" + 
+				"return output;"
+			);
+		}
+
+		console.log(numLetters('a')(4.3)) // 'aaaa';
+		</script>
+	</body>
 </html>
+
+<script>
+	jack.on({
+		"birthday": purchase,
+		"party" : purchase,
+		"presents": purchase
+	});
+
+	jack.on("birthday party presents", purchase);
+	jack.on("presents", build);
+</script>

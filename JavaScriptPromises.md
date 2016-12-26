@@ -281,4 +281,4 @@
         });
     });
     ```
-1. There's a bonus section in this course where the course developer shows how to execute once promises before them have settled.
+1. There's a bonus section in this course where the course developer shows how to execute once promises before them have <settled class=""></settled>

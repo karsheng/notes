@@ -373,6 +373,7 @@ where the version number is generated from the content of the file. Then you can
 1. E.g. If the update lands before the user interacted with the page, tells service worker to take over and refreshes instantly - if the user hasn't interacted, refreshing instantly isn't disruptive in this case
 1. Ask server for change log between new version and the current version. If you update contains only minor things maybe don't bother user at all and let them get the update naturally or if update contains urgent security fix then you might consider reload the page automatically.
 1. A way to cache skeleton - check caching the skeleton video:
+```JavaScript
 self.addEventListener('fetch', function(event) {
   // TODO: respond to requests for the root page with
   // the page skeleton from the cache
@@ -390,3 +391,283 @@ self.addEventListener('fetch', function(event) {
     })
   );
 });
+```
+## IndexedDB and Caching
+1. Use database to retrieve new data (e.g. posts), retain existing data (current posts) and remove old data (older posts).
+1. Web platform has a database called IndexDB - apparently with bad reputation
+1. Generally you only have one database per app - which contains multiple objects stores, generally one for each kind of thing you want to store (posts, preferences, users etc.)
+1. Assign propertu of the values to be the key and the key must be unique within an object store:
+```JavaScript
+{name: 'Jane', age: 41}
+{name: 'Sam', age: 41}
+{name: 'Julian', age: 11}
+```
+1. All read or write operations in IndexDB must be part of a transaction
+1. Later you can get, set, add, remove, iterate over items in the object stores as part of a transaction. 
+1. All read or write operations in IndexDB must be part of a transaction. This means that if you create a transaction for a series of steps and one of the actions fail, none of them are applied. The state of the databsed would be as if none of the steps happened.
+1. You can also create indexes within an object store, which provides a different view of the same data ordered by particular properties. The model here is similar to a lot of databases which makes a lot of sense.
+1. The IndexDB API is a little horrid and often creates spaghetti code as it's asynchronous but predates promises.
+1. Use [IndexedDB Promised](https://github.com/jakearchibald/idb) - a small library that mirror the IndexDB API but uses promises rather than events. But other than that it's the same as IndexedDB.
+1. A simple way to create and store stuff in a IndexedDB using the promised library by Jake Archibald:
+```JavaScript
+	import idb from 'idb';
+	// this function (idb.open) will be called if the browser hasn't heard of this db before
+	// or the version it knows about is less than the number here
+	// the upgradeDb parameter which we used to define the database
+	// to ensure the database integrity, this is the only place you can create
+	// and remove objects stores and indexes
+	// refer to the full IndexedDB API for more info
+	// mamy of the methods in the promised library behaves like the native IDB except they returns a promise - which make it way more useable
+	// refer to the indexDB promised documentation
+	// so far in the first two lessons, you need to run /idb-test/ in order to have this executed
+	var dbPromise = idb.open('test-db', 1, function(upgradeDb) {
+	  var keyValStore = upgradeDb.createObjectStore('keyval');
+	  keyValStore.put("world", "hello"); // note: key is 'hello' and value is 'world'
+	});
+	// read "hello" in "keyval"
+	dbPromise.then(function(db) {
+	  var tx = db.transaction('keyval');
+	  var keyValStore = tx.objectStore('keyval');
+	  return keyValStore.get('hello');
+	}).then(function(val) {
+	  console.log('The value of "hello" is:', val);
+	});
+	// set "foo" to be "bar" in "keyval"
+	dbPromise.then(function(db) {
+	  var tx = db.transaction('keyval', 'readwrite');
+	  var keyValStore = tx.objectStore('keyval');
+	  keyValStore.put('bar', 'foo');
+	  return tx.complete; // is a promise that fulfills if and when the transaction completes, and it rejects if it fails
+	}).then(function() {
+	  console.log('Added foo:bar to keyval');
+	});
+	dbPromise.then(function(db) {
+	  // TODO: in the keyval store, set
+	  // "favoriteAnimal" to your favourite animal
+	  // eg "cat" or "dog"
+	  var tx = db.transaction('keyval', 'readwrite');
+	  var keyValStore = tx.objectStore('keyval');
+	  keyValStore.put('cat', 'favoriteAnimal');
+	  return tx.complete;
+	}).then(function() {
+	  console.log('Added!');
+	});
+```
+1. Database with indices and using cursor to loop through index
+```JavaScript
+	import idb from 'idb';
+
+	var dbPromise = idb.open('test-db', 4, function(upgradeDb) {
+	  // normally there's a break per case but we specially want to continue execute
+	  // e.g. if oldVersion is 1, and the specified version is 4, it will continue executing
+	  // all the way up to case 3
+	  switch(upgradeDb.oldVersion) {
+	    case 0:
+	      var keyValStore = upgradeDb.createObjectStore('keyval');
+	      keyValStore.put("world", "hello");
+	    case 1:
+	      upgradeDb.createObjectStore('people', { keyPath: 'name' }); 
+	    case 2:
+	      var peopleStore = upgradeDb.transaction.objectStore('people');
+	      peopleStore.createIndex('animal', 'favoriteAnimal'); // this creates a animal index which stores the `people`'s `favoriteAnimal` and sorted them alphabetically
+	    case 3:
+	      peopleStore = upgradeDb.transaction.objectStore('people');
+	      peopleStore.createIndex('age', 'age');  // this creates an 'age' index which stores the `people`'s `age` and sorted them in ascending order
+	  }
+	});
+
+	// read "hello" in "keyval"
+	dbPromise.then(function(db) {
+	  var tx = db.transaction('keyval');
+	  var keyValStore = tx.objectStore('keyval');
+	  return keyValStore.get('hello');
+	}).then(function(val) {
+	  console.log('The value of "hello" is:', val);
+	});
+
+	// set "foo" to be "bar" in "keyval"
+	dbPromise.then(function(db) {
+	  var tx = db.transaction('keyval', 'readwrite');
+	  var keyValStore = tx.objectStore('keyval');
+	  keyValStore.put('bar', 'foo');
+	  return tx.complete;
+	}).then(function() {
+	  console.log('Added foo:bar to keyval');
+	});
+
+	dbPromise.then(function(db) {
+	  var tx = db.transaction('keyval', 'readwrite');
+	  var keyValStore = tx.objectStore('keyval');
+	  keyValStore.put('cat', 'favoriteAnimal');
+	  return tx.complete;
+	}).then(function() {
+	  console.log('Added favoriteAnimal:cat to keyval');
+	});
+
+	// add people to "people"
+	dbPromise.then(function(db) {
+	  var tx = db.transaction('people', 'readwrite');
+	  var peopleStore = tx.objectStore('people');
+
+	  peopleStore.put({
+	    name: 'Sam Munoz',
+	    age: 25,
+	    favoriteAnimal: 'dog'
+	  });
+
+	  peopleStore.put({
+	    name: 'Susan Keller',
+	    age: 34,
+	    favoriteAnimal: 'cat'
+	  });
+
+	  peopleStore.put({
+	    name: 'Lillie Wolfe',
+	    age: 28,
+	    favoriteAnimal: 'dog'
+	  });
+
+	  peopleStore.put({
+	    name: 'Marc Stone',
+	    age: 39,
+	    favoriteAnimal: 'cat'
+	  });
+
+	  return tx.complete;
+	}).then(function() {
+	  console.log('People added');
+	});
+
+	// list all cat people
+	dbPromise.then(function(db) {
+	  var tx = db.transaction('people');
+	  var peopleStore = tx.objectStore('people');
+	  var animalIndex = peopleStore.index('animal');
+
+	  return animalIndex.getAll('cat');
+	}).then(function(people) {
+	  console.log('Cat people:', people);
+	});
+
+	// people by age
+	dbPromise.then(function(db) {
+	  var tx = db.transaction('people');
+	  var peopleStore = tx.objectStore('people');
+	  var ageIndex = peopleStore.index('age');
+
+	  return ageIndex.getAll();
+	}).then(function(people) {
+	  console.log('People by age:', people);
+	});
+
+	// Using cursors
+	dbPromise.then(function(db) {
+	  var tx = db.transaction('people');
+	  var peopleStore = tx.objectStore('people');
+	  var ageIndex = peopleStore.index('age');
+
+	  return ageIndex.openCursor();
+	}).then(function(cursor) {
+	  if (!cursor) return;
+	  return cursor.advance(2);
+	}).then(function logPerson(cursor) {
+	  if (!cursor) return;
+	  console.log("Cursored at:", cursor.value.name);
+	  // I could also do things like:
+	  // cursor.update(newValue) to change the value, or
+	  // cursor.delete() to delete this entry
+	  return cursor.continue().then(logPerson);
+	}).then(function() {
+	  console.log('Done cursoring');
+	});
+```
+### The strategy
+1. In Wittr's case, it loads via a service worker, it does so without going to the network - fetches the skeleton and assets straight from the cache
+1. Getting posts from the database and display them hence showing the content before we go to the network - then connect the web socket to get updated posts - web sockets bypass both the service worker and the HTTP cache. As the new posts arrive we'll add them to our database for next time.
+1. You can use `.openCursor(null, 'prev')` to open a cursor that goes through an index/store backwards.
+### Caching Images
+1. Photos appear over the lifetime of the app - cache photo as they appear
+1. Put in IDB - read pixel data and convert it into a blob - that's kinda complicated. This also loses streaming, which has a performance impact.
+1. When we get an item from a database, we have to take the whole thing out in one lump, then convert it into image data, then add it to the page.
+1. Whereas if we get the image from a cache, it will stream the data so we don't need to wait for the whole thing before we display anything. This is more memory efficient and leads to faster renders, even if the data is coming from the disk. Hence **cache API** is a much better fit.
+1. Responsive image: `srcset` informs browser to load optimized images for different screen size.
+1. When post arrives through the web socket, which version do we cache? We wait until the browser makes the request, then we hear about it in the service worker, we go to the network for image and once we get a response we put it in the cache and also send it to the page (image cache is separated from the static content cache).
+1. We reset the content of our static cache whenever we update our JavaScript or CSS, but we want these photos to live between versions of our app. Next time we get a request for an image that we already have cached, we simply return it. But the trick is returning image from the cache even if the browser requests a different size of the same image.
+1. When posts are short lived, if the browser requests a bigger version of the same image returning one from the cache isn't really a problem. Even returning a big one is fine since not bandwidth is wasted. In fact getting smaller version of something we already have cached would be a waste of bandwidth. 
+1. Resizng back and forth is only something web developers do.
+1. You can only use the body of response once `response.json()` as in if you read the response as json, you can't ready it as blob (`response.blob()`), this is because the original data has gone, keeping it in memory would be a waste. Also `respondWith(response)` uses the body of `response` as well so you cannot later read it again.
+1. In most cases, this is great because if the response was like a large gigabyte video going to a video element on the page, the browser doesn't need to keep the all gigabytes in memory. It only needs to keep the bit currently playing plus a bit of extra for buffering.
+1. This is a problem for our photos, we want to open the cache, fetch from the network, and send the response to both the cache and back to the browser. We can solve this by cloning the response we send to the cache.
+```JavaScript
+	event.respondWith(
+		caches.open('wittr-content-imgs').then(function(cache) {
+			return fetch(request).then(function(response) {
+				cache.put(request, response.clone()); // cloning the response as you can only use it once
+				return response; 
+			});
+		})
+	);
+````
+```JavaScript
+function servePhotos(request) {	
+	// Photo urls look like:
+  	// /photos/9-8028-7527734776-e1d2bda28e-800px.jpg
+  	// But storageUrl has the -800px.jpg bit missing.
+  	// Use this url to store & match the image in the cache.
+  	// This means you only store one copy of each photo.
+	var storageUrl = request.url.replace(/-\d+px\.jpg$/, '');
+
+	// checks if the image is in the cache
+	// if yes, return the image
+	// if not, get from network and cache the image
+
+  return caches.open(contentImgsCache).then(function(cache) {
+    return caches.match(storageUrl).then(function(response) {
+      if (response) return response;
+      return fetch(request).then(function(networkResponse) {
+        cache.put(storageUrl, networkResponse.clone());
+        return networkResponse;
+      });
+    });  
+  });
+}
+```
+1. To remove specific entries in cache, use:
+```JavaScript
+	cache.delete(request);
+
+	// or
+
+	cache.keys().then(function(requests) {
+		// ...
+	});
+```
+1. A method copied from wittr which deletes unnecessary cache that's not loaded in the current page
+```JavaScript
+IndexController.prototype._cleanImageCache = function() {
+  return this._dbPromise.then(function(db) {
+    if (!db) return;
+
+    // TODO: open the 'wittr' object store, get all the messages,
+    // gather all the photo urls.
+    //
+    // Open the 'wittr-content-imgs' cache, and delete any entry
+    // that you no longer need.
+    var store = db.transaction('wittrs').objectStore('wittrs');
+    var photos = []; 
+    return store.getAll().then(function(messages) {
+      messages.forEach(function(message) {
+        if (message.photo) photos.push(message.photo);
+      });
+      return caches.open('wittr-content-imgs');
+    }).then(function(cache) {
+      return cache.keys().then(function(requests) {
+        requests.forEach(function(request) {
+          var url = new URL(request.url);
+           if (!photos.includes(url.pathname)) cache.delete(request);
+        });
+      })
+    });
+  });
+};
+```
