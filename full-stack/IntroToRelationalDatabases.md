@@ -213,3 +213,4 @@ select programs.name, count(bugs.filename) as num
 	create view viewname as select...
 ```
 1. Your ability to update or delete rows in a view depends on the database system.
+
